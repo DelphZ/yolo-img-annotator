@@ -1,21 +1,3 @@
-// Cargo.toml (put this alongside src/main.rs)
-// -----------------
-// [package]
-// name = "img-annotator"
-// version = "0.1.0"
-// edition = "2021"
-//
-// [dependencies]
-// eframe = "0.24"
-// egui = "0.24"
-// image = "0.24"
-// glob = "0.3"
-// anyhow = "1.0"
-// winapi = { version = "0.3.9", features = ["winuser", "windef"] }
-//
-// -----------------
-// Save the file below as src/main.rs
-
 use anyhow::Result;
 use eframe::{egui};
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, Key};
