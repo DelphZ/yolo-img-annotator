@@ -1,0 +1,2 @@
+blue_ring
+red_ring
