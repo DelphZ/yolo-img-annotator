@@ -97,7 +97,7 @@ impl AppState {
     }
 
     fn classes_file_path(&self) -> PathBuf {
-        self.load_dir.join("classes.txt")
+        self.load_dir.join("_darknet.labels")
     }
 
     fn load_classes_file(&mut self) {
