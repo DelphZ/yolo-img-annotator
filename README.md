@@ -1,6 +1,6 @@
 # Rust Image Annotator
 **Developed by SHANGHAI ROBOT EDUCATION TECHNOLOGY CO., LTD.**  
-**Version:** 2.1  
+**Version:** 2.2  
 **License:** Educational Use Only  
 
 ## 📖 Overview
@@ -22,7 +22,7 @@ cargo build --release
 ## Folder Structure & File Formats
 
 - **Image Folder:** Place your images here.  
-- **classes.txt:** One class name per line. Created/updated when you add classes.  
+- **_darknet.labels:** A file that contains your class names. One class name per line. Created/updated when you add classes.  
 - **Per-image annotation files:** `<image_name>.txt` (same base name as image). Each line:
 
   ```
@@ -63,6 +63,7 @@ cargo build --release
 - **Drag inside a selected box:** Move it
 - **Drag a corner handle (or near a corner):** Resize it
 - **On selection:** Corner handles and highlighted stroke appear
+- **Using two fingers to zoom in and out** 
 
 ### Tools (Near Image)
 
@@ -75,6 +76,11 @@ cargo build --release
 
 - **Ctrl + Z:** Undo last change (create / move / resize / delete / duplicate / class change)
   - On macOS, you may use Command as the modifier.
+
+- **Left Arrow Button** Move the image toward left
+- **Right Arrow Button** Move the image toward right
+- **Up Arrow Button** Move the image toward up
+- **Down Arrow Button** Move the image toward down
 
 ## Tips & Troubleshooting
 

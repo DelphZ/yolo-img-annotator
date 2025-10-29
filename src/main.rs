@@ -50,6 +50,9 @@ struct AppState {
     // UI-adjustable settings
     click_tolerance: f32, // pixels; how close a click near the box counts as clicking it
     min_box_pixels: f32,  // min width or height in screen pixels to accept new box
+    zoom_level: f32,
+    zoom_center: Option<Pos2>,
+    pan_offset: Vec2
 }
 
 impl Default for AppState {
@@ -75,6 +78,9 @@ impl Default for AppState {
             history_limit: 200,
             click_tolerance: 8.0,
             min_box_pixels: 6.0,
+            zoom_level: 1.0,
+            zoom_center: None,
+            pan_offset: Vec2::ZERO,
         }
     }
 }
@@ -286,6 +292,18 @@ impl AppState {
     // }
 }
 
+fn clicked_in_a_box(b: &BBox, img_rect: &Rect, pos: &Pos2, tol: &f32) -> bool {
+    let left = img_rect.left() + (b.cx - b.w/2.0) * img_rect.width();
+    let top = img_rect.top() + (b.cy - b.h/2.0) * img_rect.height();
+    let right = left + b.w * img_rect.width();
+    let bottom = top + b.h * img_rect.height();
+    if pos.x >= left - tol && pos.x <= right + tol && pos.y >= top - tol && pos.y <= bottom + tol {
+        true
+    } else {
+        false
+    }
+}
+
 impl eframe::App for AppState {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // handle Ctrl+Z undo
@@ -335,6 +353,11 @@ impl eframe::App for AppState {
         });
 
         egui::SidePanel::left("left_panel").show(ctx, |ui| {
+            if ui.button("Back to Default View").clicked() {
+                self.zoom_level = 1.0;
+                self.zoom_center = None;
+                self.pan_offset = Vec2::ZERO;
+            }
             ui.vertical(|ui| {
                 ui.heading("Classes");
                 if !self.classes.is_empty() {
@@ -372,6 +395,7 @@ impl eframe::App for AppState {
                 ui.label("Settings:");
                 ui.add(egui::Slider::new(&mut self.click_tolerance, 1.0..=30.0).text("click tolerance (px)"));
                 ui.add(egui::Slider::new(&mut self.min_box_pixels, 1.0..=40.0).text("min box pixels"));
+                ui.add(egui::Slider::new(&mut self.zoom_level, 0.1..=5.0).text("zoom level"));
 
                 ui.separator();
                 ui.heading("Images in folder:");
@@ -400,33 +424,97 @@ impl eframe::App for AppState {
                 let available = ui.available_size();
                 let (ow, oh) = self.original_size;
                 let ow = ow as f32; let oh = oh as f32;
-                let mut dw = available.x; let mut dh = available.y - 10.0;
+                let mut dw = available.x * self.zoom_level;
+                let mut dh = (available.y - 10.0) * self.zoom_level;
                 let aspect = ow / oh;
                 if dw / dh > aspect { dw = dh * aspect; } else { dh = dw / aspect; }
                 let image_size = Vec2::new(dw, dh);
                 self.texture_size = image_size;
 
-                let image = egui::Image::new(tex).fit_to_exact_size(image_size);
-                let resp = ui.add(image.sense(Sense::click_and_drag()));
+                // let image = egui::Image::new(tex).fit_to_exact_size(image_size);
+                // let resp = ui.add(image.sense(Sense::click_and_drag()));
+                // let img_rect = resp.rect;
+
+                // // Calculate offset so zoom is centered at zoom_center
+                // let mut offset = self.pan_offset;
+                // if let Some(center) = self.zoom_center {
+                //     let img_cx = img_rect.left() + center.x * img_rect.width();
+                //     let img_cy = img_rect.top() + center.y * img_rect.height();
+                //     let new_cx = img_rect.left() + center.x * image_size.x;
+                //     let new_cy = img_rect.top() + center.y * image_size.y;
+                //     offset += Vec2::new(img_cx - new_cx, img_cy - new_cy);
+                // }
+
+                // let image = egui::Image::new(tex).fit_to_exact_size(image_size);
+                // let resp = ui.put(img_rect.translate(offset), image.sense(Sense::click_and_drag()));
+                // let img_rect = resp.rect;
+                // Calculate offset so zoom is centered at zoom_center and panned
+                let mut offset = self.pan_offset;
+                if let Some(center) = self.zoom_center {
+                    let img_cx = available.x * center.x;
+                    let img_cy = available.y * center.y;
+                    let new_cx = image_size.x * center.x;
+                    let new_cy = image_size.y * center.y;
+                    offset += Vec2::new(img_cx - new_cx, img_cy - new_cy);
+                }
+
+                // Only draw the image once, at the correct position
+                let image_rect = Rect::from_min_size(ui.min_rect().min + offset, image_size);
+                let resp = ui.put(image_rect, egui::Image::new(tex).fit_to_exact_size(image_size).sense(Sense::click_and_drag()));
                 let img_rect = resp.rect;
 
-                let pointer = ui.input(|i| i.pointer.clone());
+                let pan_step = 30.0; // pixels per key press
+                let input = ctx.input(|i| i.clone());
+                if input.key_pressed(Key::ArrowLeft) {
+                    self.pan_offset.x += pan_step;
+                }
+                if input.key_pressed(Key::ArrowRight) {
+                    self.pan_offset.x -= pan_step;
+                }
+                if input.key_pressed(Key::ArrowUp) {
+                    self.pan_offset.y += pan_step;
+                }
+                if input.key_pressed(Key::ArrowDown) {
+                    self.pan_offset.y -= pan_step;
+                }
 
+                let pointer = ui.input(|i| i.pointer.clone());
+                // Handle zoom with Ctrl+mouse wheel or trackpad pinch
+                let zoom_delta = ctx.input(|i| i.zoom_delta());
+                if zoom_delta != 1.0 {
+                    // Get mouse position relative to image
+                    if let Some(mouse_pos) = pointer.hover_pos() {
+                        if img_rect.contains(mouse_pos) {
+                            // Calculate normalized position in image
+                            let norm_x = (mouse_pos.x - img_rect.left()) / img_rect.width();
+                            let norm_y = (mouse_pos.y - img_rect.top()) / img_rect.height();
+                            self.zoom_center = Some(Pos2::new(norm_x, norm_y));
+                        }
+                    }
+                    self.zoom_level = (self.zoom_level * zoom_delta).clamp(0.2, 10.0);
+                }
                 // handle press
                 if pointer.primary_clicked() {
                     if let Some(pos) = pointer.interact_pos() {
                         if img_rect.contains(pos) {
                             // Check if click is inside a box (with tolerance)
+                            // prioritize current selected box if click is also inside it
                             let mut found = None;
-                            for (i, b) in self.boxes.iter().enumerate().rev() {
-                                let left = img_rect.left() + (b.cx - b.w/2.0) * img_rect.width();
-                                let top = img_rect.top() + (b.cy - b.h/2.0) * img_rect.height();
-                                let right = left + b.w * img_rect.width();
-                                let bottom = top + b.h * img_rect.height();
-                                let tol = self.click_tolerance;
-                                if pos.x >= left - tol && pos.x <= right + tol && pos.y >= top - tol && pos.y <= bottom + tol {
-                                    found = Some(i);
-                                    break;
+                            let tol = self.click_tolerance;
+                            if let Some(sel) = self.selected_box {
+                                if sel < self.boxes.len() {
+                                    let b = &self.boxes[sel];
+                                    if clicked_in_a_box(b, &img_rect, &pos, &tol) {
+                                        found = Some(sel);
+                                    }
+                                }
+                            }
+                            if found.is_none() {
+                                for (i, b) in self.boxes.iter().enumerate().rev() {
+                                    if clicked_in_a_box(b, &img_rect, &pos, &tol) {
+                                        found = Some(i);
+                                        break;
+                                    }
                                 }
                             }
                             self.selected_box = found;
@@ -654,6 +742,7 @@ impl eframe::App for AppState {
         });
     }
 }
+
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
