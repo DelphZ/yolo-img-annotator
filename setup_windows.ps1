@@ -174,7 +174,7 @@ function Install-VSBuildTools {
 
 function Install-MSYS2 {
   # Silent / automatic MSYS2 installer + pacman setup + add mingw64 bin to User PATH
-  $msysBin = 'C:\msys64\mingw64\bin'
+  $msysBin = 'C:\msys64\ucrt64\bin'
   if (Get-Command pacman.exe -ErrorAction SilentlyContinue) {
     Write-Host "MSYS2/pacman already present. Skipping installer."
     return
