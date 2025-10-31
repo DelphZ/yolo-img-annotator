@@ -173,12 +173,90 @@ function Install-VSBuildTools {
 }
 
 function Install-MSYS2 {
-  $msysUrl = "https://www.msys2.org/"
-  Write-Host "MSYS2 is required for the GNU toolchain. The installer requires user interaction."
-  $agree = Read-Host "Open MSYS2 download page in browser? (y/N)"
-  if ($agree -eq 'y' -or $agree -eq 'Y') { Start-Process $msysUrl }
-  Write-Host "After installing MSYS2, open MSYS2 shell and run 'pacman -Syu' then install mingw toolchain as documented on msys2.org."
+  # Silent / automatic MSYS2 installer + pacman setup + add mingw64 bin to User PATH
+  $msysBin = 'C:\msys64\mingw64\bin'
+  if (Get-Command pacman.exe -ErrorAction SilentlyContinue) {
+    Write-Host "MSYS2/pacman already present. Skipping installer."
+    return
+  }
+
+  Write-Host "MSYS2 not found. Attempting automatic silent installation..." -ForegroundColor Yellow
+
+  # Prefer winget if available (more robust)
+  if (Get-Command winget.exe -ErrorAction SilentlyContinue) {
+    Write-Host "winget detected. Installing MSYS2 via winget (silent)..."
+    $wgArgs = "install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements"
+    $rc = Run-Command (Get-Command winget.exe).Source $wgArgs
+    if ($rc -ne 0) { Write-Host "winget install failed (code $rc). Falling back to direct installer." }
+    else { Write-Host "winget install completed." }
+  }
+
+  # If pacman still not found, fall back to direct download + silent installer
+  if (-not (Get-Command pacman.exe -ErrorAction SilentlyContinue)) {
+    # GitHub redirect for the latest MSYS2 installer
+    $installerUrl = "https://github.com/msys2/msys2-installer/releases/latest/download/msys2-x86_64-latest.exe"
+    $tmpInstaller = Join-Path $env:TEMP "msys2-installer.exe"
+    Write-Host "Downloading MSYS2 installer to $tmpInstaller ..."
+    try {
+      Invoke-WebRequest -Uri $installerUrl -OutFile $tmpInstaller -UseBasicParsing -ErrorAction Stop
+    } catch {
+      ExitWithError "Failed to download MSYS2 installer from $installerUrl. Please install MSYS2 manually." 20
+    }
+
+    # Attempt silent install. MSYS2 installer is NSIS-based and supports /S for silent.
+    Write-Host "Running MSYS2 installer silently (this may take a few minutes)..."
+    $rc = Run-Command $tmpInstaller "/S"
+    if ($rc -ne 0) {
+      Write-Host "Silent installer returned code $rc. Trying interactive run (for diagnostics)..."
+      # Try interactive as fallback to let user see errors
+      try {
+        Start-Process -FilePath $tmpInstaller -ArgumentList "" -Wait
+      } catch {
+        ExitWithError "MSYS2 installer failed. Please install MSYS2 manually from https://www.msys2.org/." 21
+      }
+    }
+
+    # Clean up downloaded installer (best-effort)
+    try { Remove-Item $tmpInstaller -ErrorAction SilentlyContinue } catch {}
+  }
+
+  # Wait a short time for MSYS2 to settle, then run pacman updates and install mingw toolchain
+  $bashPath = "C:\msys64\usr\bin\bash.exe"
+  if (-not (Test-Path $bashPath)) {
+    # try alternative path if installed to Program Files or similar (rare)
+    $bashPath = (Get-Command bash.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+  }
+  if (-not $bashPath -or -not (Test-Path $bashPath)) {
+    ExitWithError "Unable to find MSYS2 bash.exe after installation. Please check MSYS2 install location." 22
+  }
+
+  Write-Host "Running MSYS2 pacman updates and installing mingw-w64-x86_64-toolchain (non-interactive)..."
+  # Use -lc to run commands from Windows; combine updates then install toolchain
+  $cmd = "pacman -Syu --noconfirm; pacman -Su --noconfirm; pacman -S --noconfirm --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-binutils"
+  $rc = Run-Command $bashPath "-lc `"$cmd`""
+  if ($rc -ne 0) {
+    Write-Host "pacman returned non-zero exit code $rc. You may need to run MSYS2 shell manually and run: pacman -Syu ; pacman -S mingw-w64-x86_64-toolchain" -ForegroundColor Yellow
+  } else {
+    Write-Host "MSYS2 packages installed."
+  }
+
+  # Add mingw64 bin to User PATH (so dlltool.exe and other tools are visible to PowerShell/cargo)
+  $current = [Environment]::GetEnvironmentVariable('PATH', 'User') -or ""
+  if ($current -notlike "*$msysBin*") {
+    $new = if ($current -eq "") { $msysBin } else { "$current;$msysBin" }
+    try {
+      [Environment]::SetEnvironmentVariable('PATH', $new, 'User')
+      Write-Host "Added $msysBin to user PATH. Please restart your terminal for changes to take effect."
+    } catch {
+      Write-Host "Failed to modify User PATH automatically. Please add $msysBin to your PATH manually." -ForegroundColor Yellow
+    }
+  } else {
+    Write-Host "$msysBin already present in User PATH."
+  }
+
+  Write-Host "MSYS2 installation (attempt) finished. Verify by running: Get-Command dlltool.exe"
 }
+
 
 # ---------------------- main ----------------------
 Ensure-Elevated
@@ -196,14 +274,14 @@ if ($Toolchain -eq "msvc" -or $Toolchain -eq "all") {
     Write-Host "MSVC toolchain detected."
   }
 }
-# if ($Toolchain -eq "gnu" -or $Toolchain -eq "all") {
-#   Write-Host "`nGNU toolchain requested. Checking for MSYS2..."
-#   if (-not (Get-Command pacman.exe -ErrorAction SilentlyContinue)) {
-#     Write-Host "MSYS2 (pacman) not found."
-#     Install-MSYS2
-#   } else {
-#     Write-Host "MSYS2 detected."
-#   }
-# }
+if ($Toolchain -eq "gnu" -or $Toolchain -eq "all") {
+  Write-Host "`nGNU toolchain requested. Checking for MSYS2..."
+  if (-not (Get-Command pacman.exe -ErrorAction SilentlyContinue)) {
+    Write-Host "MSYS2 (pacman) not found."
+    Install-MSYS2
+  } else {
+    Write-Host "MSYS2 detected."
+  }
+}
 
 Write-Host "`nAll checks finished. Try: cargo build --release" -ForegroundColor Green
