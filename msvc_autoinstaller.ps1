@@ -274,14 +274,14 @@ if ($Toolchain -eq "msvc" -or $Toolchain -eq "all") {
     Write-Host "MSVC toolchain detected."
   }
 }
-if ($Toolchain -eq "gnu" -or $Toolchain -eq "all") {
-  Write-Host "`nGNU toolchain requested. Checking for MSYS2..."
-  if (-not (Get-Command pacman.exe -ErrorAction SilentlyContinue)) {
-    Write-Host "MSYS2 (pacman) not found."
-    Install-MSYS2
-  } else {
-    Write-Host "MSYS2 detected."
-  }
-}
+# if ($Toolchain -eq "gnu" -or $Toolchain -eq "all") {
+#   Write-Host "`nGNU toolchain requested. Checking for MSYS2..."
+#   if (-not (Get-Command pacman.exe -ErrorAction SilentlyContinue)) {
+#     Write-Host "MSYS2 (pacman) not found."
+#     Install-MSYS2
+#   } else {
+#     Write-Host "MSYS2 detected."
+#   }
+# }
 
 Write-Host "`nAll checks finished. Try: cargo build --release" -ForegroundColor Green
