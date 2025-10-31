@@ -62,9 +62,40 @@ function Ensure-Elevated {
   }
 }
 
-function Run-Command($exe, $args) {
-  Write-Host "`n> Running: $exe $args"
-  $p = Start-Process -FilePath $exe -ArgumentList $args -NoNewWindow -Wait -PassThru
+# Robust Start-Process wrapper: call with -ArgumentList only when we actually have args
+function Run-Command($exe, $arguments) {
+  # arguments can be null/empty, string, or array
+  if ($null -eq $arguments) {
+    Write-Host "`n> Running: $exe (no arguments)"
+    $p = Start-Process -FilePath $exe -NoNewWindow -Wait -PassThru
+  } elseif ($arguments -is [string]) {
+    if ($arguments.Trim() -eq "") {
+      Write-Host "`n> Running: $exe (no arguments)"
+      $p = Start-Process -FilePath $exe -NoNewWindow -Wait -PassThru
+    } else {
+      Write-Host "`n> Running: $exe $arguments"
+      $p = Start-Process -FilePath $exe -ArgumentList $arguments -NoNewWindow -Wait -PassThru
+    }
+  } elseif ($arguments -is [array]) {
+    if ($arguments.Count -eq 0) {
+      Write-Host "`n> Running: $exe (no arguments)"
+      $p = Start-Process -FilePath $exe -NoNewWindow -Wait -PassThru
+    } else {
+      Write-Host "`n> Running: $exe $($arguments -join ' ')"
+      $p = Start-Process -FilePath $exe -ArgumentList $arguments -NoNewWindow -Wait -PassThru
+    }
+  } else {
+    # fallback: convert to string
+    $argStr = [string]$arguments
+    if ($argStr.Trim() -eq "") {
+      Write-Host "`n> Running: $exe (no arguments)"
+      $p = Start-Process -FilePath $exe -NoNewWindow -Wait -PassThru
+    } else {
+      Write-Host "`n> Running: $exe $argStr"
+      $p = Start-Process -FilePath $exe -ArgumentList $argStr -NoNewWindow -Wait -PassThru
+    }
+  }
+
   return $p.ExitCode
 }
 
